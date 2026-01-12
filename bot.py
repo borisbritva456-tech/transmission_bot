@@ -1,5 +1,6 @@
 import logging
 from telegram.ext import Application, CommandHandler, ContextTypes
+from telegram.error import NetworkError, Conflict, TelegramError
 from config import BOT_TOKEN, CHAT_ID
 from services.transmission import is_connected, get_client
 from handlers.commands import start, help_command, completed_torrents
@@ -64,6 +65,37 @@ async def cleanup_logs_job(context: ContextTypes.DEFAULT_TYPE):
     cleanup_old_logs('logs', days=30)
 
 
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Обработчик ошибок для telegram.ext.Application"""
+    # Логируем ошибку
+    error = context.error
+    
+    # Обработка NetworkError (временные проблемы сети/Telegram API)
+    if isinstance(error, NetworkError):
+        logger.warning(f"Network error occurred: {error}. This is usually temporary and will be retried automatically.")
+        return
+    
+    # Обработка Conflict (запущено несколько экземпляров бота)
+    if isinstance(error, Conflict):
+        logger.critical(
+            f"Conflict error: {error}\n"
+            "This usually means multiple bot instances are running.\n"
+            "Make sure only one instance is active (check systemd service and manual runs)."
+        )
+        return
+    
+    # Обработка других ошибок Telegram
+    if isinstance(error, TelegramError):
+        logger.error(f"Telegram error occurred: {error}", exc_info=error)
+        return
+    
+    # Обработка всех остальных ошибок
+    logger.error(
+        f"Exception while handling an update: {error}",
+        exc_info=error
+    )
+
+
 def main():
     """Главная функция запуска бота"""
     # Проверяем наличие токена
@@ -78,6 +110,9 @@ def main():
     # Создаем Application и передаем ему токен
     application = Application.builder().token(BOT_TOKEN).build()
 
+    # Добавляем обработчик ошибок
+    application.add_error_handler(error_handler)
+    
     # Добавляем обработчики команд
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
