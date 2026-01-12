@@ -1,0 +1,4 @@
+python-telegram-bot>=20.0
+transmission-rpc>=0.11
+python-dotenv>=1.0.0
+
